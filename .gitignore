@@ -1,0 +1,27 @@
+# Python cache and compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Virtual environments
+env/
+venv/
+
+# Logs
+*.log
+
+# macOS system files
+.DS_Store
+
+# ML model artifacts
+*.h5
+*.pt
+*.pkl
+
+# Temporary files
+*.tmp
+*.swp
