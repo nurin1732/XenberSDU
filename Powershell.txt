@@ -1,3 +1,0 @@
-$env:API_BASE_URL="http://localhost:8000"
-$env:REFRESH_MS="5000"
-streamlit run frontend/dashboard.py
