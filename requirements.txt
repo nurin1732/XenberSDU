@@ -1,3 +1,21 @@
+# Core packages
+numpy
+pandas
+
+# Machine Learning
+scikit-learn
+torch
+tensorflow
+joblib
+
+# Visualization
+matplotlib
+seaborn
+
+# Backend API
+flask
+fastapi
+uvicorn
 streamlit>=1.32
 requests>=2.31
 pandas>=2.0

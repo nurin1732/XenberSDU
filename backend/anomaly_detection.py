@@ -1,1 +1,0 @@
-print('Anomaly detection module')
