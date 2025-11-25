@@ -12,16 +12,16 @@ simulate_logistics_data()
 def home():
     return {"message": "Logistics AI Backend Running"}
 
-@app.get("/forecast_volume")
-def forecast_volume():
+@app.get("/forecast")
+def forecast():
     return get_forecast_pytorch()
 
-@app.get("/anomalies_logistics")
-def anomalies_logistics():
+@app.get("/anomalies")
+def anomalies():
     return detect_anomalies()
 
-@app.get("/optimize_staffing")
-def optimize_staffing():
+@app.get("/optimize")
+def optimize():
     return generate_optimization_plan()
 
 @app.get("/alerts")

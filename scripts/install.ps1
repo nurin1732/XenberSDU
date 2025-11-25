@@ -1,12 +1,10 @@
-<#
-.SYNOPSIS
-    Setup script for Predictive Analytics SaaS
-.DESCRIPTION
-    Installs Python 3.11 (if missing), sets up virtual environment, installs dependencies from requirements.txt,
-    and activates the virtual environment (Windows only). Provides instructions for macOS/Linux.
-#>
-
 Write-Host "=== Predictive Analytics SaaS Setup ==="
+
+# Detect OS
+$OS = $PSVersionTable.OS
+$IsWindowsOS = $false
+if ($OS -match "Windows") { $IsWindowsOS = $true }
+Write-Host "Detected OS: $OS"
 
 # Function to check if Python 3.11 exists
 function Test-Python311 {
@@ -18,16 +16,10 @@ function Test-Python311 {
     }
 }
 
-# Detect OS
-$OS = $PSVersionTable.OS
-$IsWindowsOS = $false
-if ($OS -match "Windows") { $IsWindowsOS = $true }
-Write-Host "Detected OS: $OS"
-
 # Install Python 3.11 if missing
 if (-not (Test-Python311)) {
     Write-Host "Python 3.11 not found. Installing..."
-    if ($IsWindows) {
+    if ($IsWindowsOS) {
         Write-Host "Installing Python 3.11 via winget..."
         winget install -e --id Python.Python.3.11
     } else {
@@ -45,7 +37,7 @@ if (-not (Test-Python311)) {
 }
 
 # Set paths
-if ($IsWindows) {
+if ($IsWindowsOS) {
     $PythonPath = "python3.11"
     $VenvActivate = ".\venv\Scripts\Activate.ps1"
 } else {
@@ -72,7 +64,7 @@ if (Test-Path "./requirements.txt") {
 }
 
 # Activate virtual environment
-if ($IsWindows) {
+if ($IsWindowsOS) {
     Write-Host "Activating virtual environment..."
     if (Test-Path $VenvActivate) {
         Write-Host "Virtual environment activated for this PowerShell session."
