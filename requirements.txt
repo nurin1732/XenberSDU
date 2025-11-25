@@ -16,3 +16,8 @@ seaborn
 flask
 fastapi
 uvicorn
+streamlit>=1.32
+requests>=2.31
+pandas>=2.0
+numpy>=1.24
+plotly>=5.20   # optional, only if you want extra charts
