@@ -32,5 +32,14 @@ def generate_optimization_plan():
         optimizer.step()
 
     latest_volume = torch.tensor([[df["inbound_volume"].iloc[-1]]]).float()
-    recommended_staff = model(latest_volume).item()
-    return {"recommended_staff_hours": int(math.ceil(recommended_staff))}
+    recommended_staff = int(math.ceil(model(latest_volume).item()))
+
+    # Add priority based on thresholds
+    if recommended_staff >= 10:
+        priority = "High"
+    elif recommended_staff >= 5:
+        priority = "Medium"
+    else:
+        priority = "Low"
+
+    return [{"recommended_staff_hours": recommended_staff, "priority": priority}]
