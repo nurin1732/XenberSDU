@@ -1,65 +1,56 @@
 # Requires PowerShell 5+ or PowerShell 7+
-Write-Host "=== XenberSDU: Automated Setup & Launch (Windows PowerShell) ===`n"
+# ===============================================
+# setupWindows.ps1
+# ===============================================
 
-# --- Detect Python 3.11 ---
-$python = ""
-if (Get-Command python3.11 -ErrorAction SilentlyContinue) {
-    $python = "python3.11"
-}
-elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    # Check py launcher for 3.11
-    $pyVersion = py -0p | Select-String "3.11"
-    if ($pyVersion) { $python = "py -3.11" }
-}
+# Allow running scripts for this session
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
-if ($python -eq "") {
-    Write-Host "❌ Python 3.11 not found!"
-    Write-Host "➡ Install it using one of these:"
-    Write-Host "   • Windows Store:  Python 3.11"
-    Write-Host "   • Official:       https://python.org/downloads/"
-    Write-Host "   • Pyenv-win:      pyenv install 3.11.7"
-    exit 1
-}
+# Move to project root (quote the path to handle spaces)
+$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+Set-Location "$projectRoot\.."
 
-Write-Host "Using Python: $python`n"
-
-# --- Create Virtual Environment ---
-if (!(Test-Path "venv")) {
-    Write-Host "Creating virtual environment (Python 3.11)..."
-    cmd.exe /c "$python -m venv venv"
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host "❌ Failed to create venv"
-        exit 1
-    }
+# ===============================================
+# 1. Create virtual environment if it doesn't exist
+# ===============================================
+if (-not (Test-Path "venv")) {
+    Write-Host "Creating virtual environment..."
+    python -m venv venv
+} else {
+    Write-Host "Virtual environment already exists."
 }
 
+# ===============================================
+# 2. Activate virtual environment
+# ===============================================
 Write-Host "Activating virtual environment..."
-. .\venv\Scripts\Activate.ps1
+& ".\venv\Scripts\Activate.ps1"
 
-if (-not $env:VIRTUAL_ENV) {
-    Write-Host "❌ Could not activate venv"
-    exit 1
-}
-
-# --- Install Dependencies ---
-Write-Host "`nInstalling dependencies..."
-pip install --upgrade pip setuptools wheel
+# ===============================================
+# 3. Install dependencies
+# ===============================================
+Write-Host "Installing dependencies..."
+pip install --upgrade pip
 pip install -r requirements.txt
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "❌ Failed installing requirements"
-    exit 1
+
+# ===============================================
+# 4. Launch backend in a new PowerShell window
+# ===============================================
+Write-Host "Starting backend..."
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$PWD\backend`"; .\venv\Scripts\python.exe -m uvicorn api:app --reload"
+
+# ===============================================
+# 5. Wait until backend is ready
+# ===============================================
+Write-Host "Waiting for backend to start..."
+while (-not (Test-NetConnection -ComputerName localhost -Port 8000).TcpTestSucceeded) {
+    Start-Sleep -Seconds 1
 }
 
-$ROOT = (Get-Location).Path
+# ===============================================
+# 6. Launch frontend in a new PowerShell window
+# ===============================================
+Write-Host "Starting frontend..."
+Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$PWD\frontend`"; ..\venv\Scripts\python.exe -m streamlit run `"`dashboard.py`"`"
 
-# --- Launch Backend in New PowerShell Window ---
-Write-Host "`nLaunching Backend..."
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$ROOT`"; .\venv\Scripts\Activate.ps1; uvicorn backend.api:app --reload"
-
-# --- Launch Frontend in New PowerShell Window ---
-Write-Host "Launching Frontend..."
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$ROOT\frontend`"; ..\venv\Scripts\Activate.ps1; streamlit run dashboard.py"
-
-Write-Host "`n🎉 Project running!"
-Write-Host "Backend → http://127.0.0.1:8000"
-Write-Host "Frontend → http://localhost:8501"
+Write-Host "All done! Backend and frontend are running
