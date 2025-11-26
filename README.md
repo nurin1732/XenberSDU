@@ -12,8 +12,16 @@ Windows
    "cd <path-to-folder>\XenberSDU"
    (replace the <path-to-folder>with location of folder)
    (eg.cd C:\Users\Judge\Desktop\XenberSDU)
-3. Run:
-   ".\setup\setupWindows.ps1"
+3. Bypass execution policy
+   Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+4. Activate the virtual environment
+   & ".\venv\Scripts\Activate.ps1"
+5. Start the backen:
+   & ".\venv\Scripts\python.exe" -m uvicorn backend.api:app --reload
+   Keep this window open
+6. Once the backend running, open a new Powershell window for frontend:
+   cd "C:\Users\YourUsername\Downloads\XenberSDU" 
+   & ".\venv\Scripts\python.exe" -m streamlit run frontend/dashboard.py
 
 MacOS
 1. Open Terminal
