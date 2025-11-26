@@ -3,17 +3,9 @@ numpy
 pandas
 
 # Machine Learning
-scikit-learn
 torch
-tensorflow
-joblib
-
-# Visualization
-matplotlib
-seaborn
 
 # Backend API
-flask
 fastapi
 uvicorn
 
