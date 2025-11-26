@@ -24,7 +24,14 @@ st.set_page_config(
 # -----------------------------
 # Utilities
 # -----------------------------
+def safe_df(data):
+    if isinstance(data, list):
+        return pd.DataFrame(data)
+    if isinstance(data, dict):
+        return pd.DataFrame([data])
+    return pd.DataFrame()
 @st.cache_data(show_spinner=False)
+
 def cached_api_get(path, params=None):
     try:
         resp = requests.get(f"{API_BASE_URL}{path}", params=params, timeout=5)
@@ -167,7 +174,7 @@ with tab_home:
     st.divider()
     st.subheader("Overview chart")
     if not df_fc.empty and forecast_col:
-        st.line_chart(df_fc.set_index("timestamp")[forecast_col], height=250, use_container_width=True)
+        st.line_chart(df_fc.set_index("timestamp")[forecast_col], height=250, width="stretch")
     else:
         st.info("Forecast data not available yet.")
 
@@ -188,7 +195,7 @@ with tab_forecast:
     else:
         col_l, col_r = st.columns([3,2])
         with col_l:
-            st.line_chart(df.set_index("timestamp")[forecast_col], height=350, use_container_width=True)
+            st.line_chart(df.set_index("timestamp")[forecast_col], height=350, width="stretch")
         with col_r:
             st.write("Summary")
             st.write({
@@ -218,10 +225,10 @@ with tab_anomaly:
     else:
         st.scatter_chart(
             df.rename(columns={"timestamp":"index"}).set_index("index")[["value"]],
-            height=350, use_container_width=True
+            height=350, width="stretch"
         )
         st.divider()
-        st.dataframe(df, use_container_width=True, height=350)
+        st.dataframe(df, width="stretch", height=350)
     if st.button("Retry Fetch Anomalies"):
         st.experimental_rerun()
 
@@ -230,29 +237,36 @@ with tab_anomaly:
 # -----------------------------
 with tab_opt:
     op_data = fetch_data("/optimize")
-    df = pd.DataFrame(op_data)
+    df = safe_df(op_data)
 
     if df.empty:
         st.info("No optimization data yet.")
     else:
-        priority = st.multiselect("Filter by priority", ["High","Medium","Low"], ["High","Medium","Low"])
-        df_f = df[df["priority"].isin(priority)]
-        st.dataframe(df_f, use_container_width=True, height=350)
+        # Add default priority if missing
+        if "priority" not in df.columns:
+            df["priority"] = "Medium"
+
+        priority_selection = st.multiselect(
+            "Filter by priority", ["High","Medium","Low"], ["High","Medium","Low"]
+        )
+        df_f = df[df["priority"].isin(priority_selection)]
+
+        st.dataframe(df_f, width="stretch", height=350)
         st.divider()
         st.download_button(
             "Download recommendations (CSV)",
             df_f.to_csv(index=False).encode("utf-8"),
             "optimization_recommendations.csv",
         )
+
     if st.button("Retry Fetch Optimization"):
         st.experimental_rerun()
-
 # -----------------------------
 # Alerts Tab
 # -----------------------------
 with tab_alerts:
     al_data = fetch_data("/alerts")
-    df = pd.DataFrame(al_data)
+    df = safe_df(al_data)
 
     if df.empty:
         st.info("No alerts or API not ready.")
@@ -281,4 +295,4 @@ with tab_alerts:
 # -----------------------------
 # Footer
 # -----------------------------
-st.caption("Powered by JamAI backend (RAG + orchestration). Streamlit frontend. Supports BM/EN.")
+st.caption("Powered by PyTorch backend. Streamlit frontend.")

@@ -3,7 +3,6 @@
 ## What this provides
 - Multi-tab dashboard: Home, Forecasting, Anomaly Detection, Optimization, Alerts.
 - Auto-refresh with configurable interval.
-- Works with backend API, and gracefully falls back to mock data.
 - Download buttons for CSV/JSON exports.
 - Clean, judge-friendly layout.
 
