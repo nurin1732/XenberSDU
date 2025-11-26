@@ -16,7 +16,7 @@ Windows
    Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 4. Activate the virtual environment
    & ".\venv\Scripts\Activate.ps1"
-5. Start the backen:
+5. Start the backend:
    & ".\venv\Scripts\python.exe" -m uvicorn backend.api:app --reload
    Keep this window open
 6. Once the backend running, open a new Powershell window for frontend:
