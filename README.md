@@ -1,8 +1,11 @@
-# XenberSDU
-Hackathon CodeFest 2025 Xenber Track 1 Entry Intelligent Predictive Analytics for Enterprise Operations by the Sekai Dev Unit
+# XenberSIntelligent Predictive Analytics for Enterprise Operations
+Hackathon CodeFest 2025 Xenber Track 1 Entry by the Sekai Dev Unit
 
-How to start the program:
+## Prerequisites
+Python 3.9 to 3.11 supported
 
+
+## How to run
 Windows
 1. Open PowerShell
 2. Run:
