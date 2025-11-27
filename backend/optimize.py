@@ -1,4 +1,4 @@
-# backend/optimization/optimizer.py
+URGENT_ALERTS = {}
 
 def optimize(latest, forecast, anomaly_vars=None):
     """
@@ -23,3 +23,42 @@ def optimize(latest, forecast, anomaly_vars=None):
             recommendations[var] = ACTIONS[var]
 
     return recommendations
+
+def compare_actions(latest, forecast):
+    actions = {}
+
+    if forecast["sorting_capacity"] < latest["sorting_capacity"] - 10:
+        actions["sorting_capacity"] = (
+            "Sorting capacity expected to drop — increase throughput or reassign staff."
+        )
+
+    if forecast["staff_available"] < latest["staff_available"] - 5:
+        actions["staff_available"] = (
+            "Staff availability may decrease — prepare backup workers."
+        )
+
+    if forecast["vehicles_ready"] < latest["vehicles_ready"] - 3:
+        actions["vehicles_ready"] = (
+            "Vehicle readiness dropping — adjust dispatch timing or activate standby units."
+        )
+
+    if forecast["congestion_level"] > latest["congestion_level"] + 0.1:
+        actions["congestion_level"] = (
+            "Congestion expected to rise — reroute or boost sorting throughput."
+        )
+
+    return actions
+
+def add_urgent_alert(anomalies):
+    global URGENT_ALERTS
+
+    urgent_map = {
+        "sorting_capacity": "Sudden drop in sorting capacity — immediate intervention required.",
+        "staff_available": "Anomaly in staff availability — deploy emergency team.",
+        "vehicles_ready": "Vehicle readiness anomaly — dispatch disruption risk.",
+        "congestion_level": "Abnormal congestion spike — clear buffers immediately.",
+    }
+
+    for var in anomalies:
+        if var in urgent_map:
+            URGENT_ALERTS[var] = urgent_map[var]

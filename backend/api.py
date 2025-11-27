@@ -170,52 +170,61 @@ def forecast_one_hour():
 def optimization():
     df = load_data()
 
-    if df.empty:
-        return {"error": "no data yet"}
+    if df.empty or len(df) < 5:
+        return {"error": "Not enough data yet"}
 
-    latest_row = df.iloc[-1].to_dict()
-    latest = {
-        k: v for k, v in latest_row.items()
-        if k in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]
-    }
+    # ------------------------------------------
+    # A) LATEST STATE
+    # ------------------------------------------
+    latest = df.iloc[-1].to_dict()
 
-    # --- Forecast next hour ---
+    # ------------------------------------------
+    # B) FORECAST 1-HOUR
+    # ------------------------------------------
     fc = Forecaster()
     fc.fit(df)
-    fc_next = fc.forecast_one_hour(df)
+    one_hour = fc.forecast_one_hour(df)
 
-    if fc_next is None:
-        return {
-            "status": "stable",
-            "message": "Not enough data to generate forecast.",
-            "latest": clean_json(latest)
-        }
+    # ------------------------------------------
+    # C) ANOMALY DETECTION
+    # ------------------------------------------
+    anomaly_model = RollingZScoreAnomaly(window=10, threshold=2.5)
+    anomaly_df = anomaly_model.compute(df)
 
-    forecast_next = clean_json(fc_next)
+    anomaly_vars = []
+    if anomaly_df is not None and len(anomaly_df) > 0:
+        anomaly_vars = list(anomaly_df["variable"].unique())
 
-    # --- Anomaly scan ---
-    model = RollingZScoreAnomaly(window=10, threshold=2.5)
-    ast = model.compute(df)
+    # ------------------------------------------
+    # D) URGENT ALERTS (from anomalies)
+    # ------------------------------------------
+    urgent_alerts = []
+    for var in anomaly_vars:
+        urgent_alerts.append(
+            f"URGENT: {var.replace('_',' ').title()} is behaving abnormally — immediate attention required."
+        )
 
-    if ast.empty:
-        anomaly_vars = []
-    else:
-        anomaly_vars = list(ast["variable"].unique())
+    # ------------------------------------------
+    # E) RECOMMENDED ACTIONS (comparison-based)
+    # ------------------------------------------
+    suggestions = {}
 
-    # --- Optimization suggestions ---
-    suggestions = optimize(latest, forecast_next, anomaly_vars)
+    if one_hour:
+        for key in ["sorting_capacity", "staff_available", "vehicles_ready"]:
+            if key in latest and key in one_hour:
+                if one_hour[key] < latest[key]:
+                    suggestions[key] = f"{key.replace('_',' ').title()} is expected to drop — consider boosting resources."
+                elif one_hour[key] > latest[key]:
+                    suggestions[key] = f"{key.replace('_',' ').title()} improving — maintain current operations."
 
-    if not suggestions:
-        return clean_json({
-            "status": "stable",
-            "message": "All metrics appear stable.",
-            "latest": latest,
-            "forecast_next": forecast_next
-        })
+        # congestion special handling
+        if "congestion_level" in latest and "congestion_level" in one_hour:
+            if one_hour["congestion_level"] > latest["congestion_level"] + 0.1:
+                suggestions["congestion_level"] = "Congestion expected to worsen — consider load redistribution."
 
-    return clean_json({
-        "status": "action_required",
+    return {
         "latest": latest,
-        "forecast_next": forecast_next,
+        "forecast_next": one_hour,
+        "urgent_alerts": urgent_alerts,
         "suggestions": suggestions
-    })
+    }

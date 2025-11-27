@@ -185,7 +185,7 @@ with tabs[3]:
     # ---- LATEST METRICS (not dropdown, not JSON) ----
         if "latest" in out:
             latest = out["latest"]
-            st.markdown("### 📌 Latest Metrics (Current Status)")
+            st.markdown("###  Latest Metrics (Current Status)")
 
             cols = st.columns(4)
 
@@ -243,17 +243,28 @@ with tabs[3]:
         st.caption(f"Forecast time: {ts}")
         st.markdown("---")
 
-        # ---- RECOMMENDATIONS ----
+        # -------------------------
+        # URGENT ALERTS
+        # -------------------------
+        urgent = out.get("urgent_alerts", [])
+        st.markdown("###  Urgent Alerts")
+
+        if urgent:
+            for alert in urgent:
+                st.error(alert)
+        else:
+            st.success("No urgent alerts.")
+
+        st.markdown("---")
+
+        # -------------------------
+        # RECOMMENDED ACTIONS
+        # -------------------------
         st.markdown("###  Recommended Actions")
 
         suggestions = out.get("suggestions", {})
-
-        if suggestions.get("status") == "stable":
-            st.success(" System operating normally. No optimization required.")
+        if suggestions:
+            for var, msg in suggestions.items():
+                st.info(f"**{var.replace('_',' ').title()}** → {msg}")
         else:
-            actions = suggestions.get("actions", [])
-            if not actions:
-                st.info("No optimization suggestions available at the moment.")
-            else:
-                for act in actions:
-                    st.write(f"• {act}")
+            st.success("System stable — no recommendations.")
