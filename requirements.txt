@@ -1,17 +1,12 @@
-# Core packages
-numpy
-pandas
-
-# Machine Learning
-torch
-
-# Backend API
 fastapi
 uvicorn
-
-# Frontend UI
+pydantic
+pandas
+numpy
+scikit-learn
+apscheduler
+python-dateutil
+plotly
 streamlit
 requests
 streamlit-autorefresh
-matplotlib
-seaborn
