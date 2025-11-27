@@ -180,16 +180,16 @@ with tabs[2]:
 # -----------------------------------------
 with tabs[3]:
 
-        out = requests.get(f"{BASE}/optimize").json()
+    out = requests.get(f"{BASE}/optimize").json()
 
-    # ---- LATEST METRICS (not dropdown, not JSON) ----
-        if "latest" in out:
-            latest = out["latest"]
-            st.markdown("###  Latest Metrics (Current Status)")
+    # -------------------------
+    # LATEST METRICS
+    # -------------------------
+    if "latest" in out:
+        latest = out["latest"]
+        st.markdown("### Latest Metrics (Current Status)")
 
-            cols = st.columns(4)
-
-    # Ensure consistent ordering
+        cols = st.columns(4)
         metric_order = [
             "sorting_capacity",
             "staff_available",
@@ -198,11 +198,10 @@ with tabs[3]:
         ]
 
         for i, key in enumerate(metric_order):
-            value = latest.get(key, None)
+            value = latest.get(key)
             if value is None:
                 continue
 
-            # format congestion level
             if key == "congestion_level":
                 value = f"{value * 100:.1f}%"
 
@@ -210,13 +209,14 @@ with tabs[3]:
 
         st.markdown("---")
 
+    # -------------------------
+    # 1-HOUR FORECAST
+    # -------------------------
+    if "forecast_next" in out:
+        fc = out["forecast_next"]
+        st.markdown("### 1-Hour Forecast")
 
-    # ---- 1-HOUR FORECAST (metric-style, same layout) ----
-        if "forecast_next" in out:
-            fc = out["forecast_next"]
-        st.markdown("###  1-Hour Forecast")
-
-            # Same keys, same order
+        cols_fc = st.columns(4)
         fc_order = [
             "sorting_capacity",
             "staff_available",
@@ -224,10 +224,8 @@ with tabs[3]:
             "congestion_level",
         ]
 
-        cols_fc = st.columns(4)
-
         for i, key in enumerate(fc_order):
-            value = fc.get(key, None)
+            value = fc.get(key)
             if value is None:
                 continue
 
@@ -238,33 +236,40 @@ with tabs[3]:
 
             cols_fc[i].metric(label=key.replace("_", " ").title(), value=value)
 
-        # timestamp label
-        ts = fc.get("timestamp", "")
-        st.caption(f"Forecast time: {ts}")
+        st.caption(f"Forecast time: {fc.get('timestamp', '')}")
         st.markdown("---")
 
-        # -------------------------
-        # URGENT ALERTS
-        # -------------------------
-        urgent = out.get("urgent_alerts", [])
-        st.markdown("###  Urgent Alerts")
+    # -------------------------
+    # URGENT ALERTS
+    # -------------------------
+    urgent = out.get("urgent_alerts", [])
+    st.markdown("### Urgent Alerts")
 
-        if urgent:
-            for alert in urgent:
-                st.error(alert)
-        else:
-            st.success("No urgent alerts.")
+    if urgent:
+        for alert in urgent:
+            box = st.container()
+            with box:
+                st.error(alert["message"])
 
-        st.markdown("---")
+                # dismiss button
+                if st.button("Dismiss", key=f"dismiss_{alert['id']}"):
+                    requests.post(
+                        f"{BASE}/dismiss_alert",
+                        params={"alert_id": alert["id"]}
+                    )
+                    st.rerun()
+    else:
+        st.success("No urgent alerts.")
 
-        # -------------------------
-        # RECOMMENDED ACTIONS
-        # -------------------------
-        st.markdown("###  Recommended Actions")
+    st.markdown("---")
 
-        suggestions = out.get("suggestions", {})
-        if suggestions:
-            for var, msg in suggestions.items():
-                st.info(f"**{var.replace('_',' ').title()}** → {msg}")
-        else:
-            st.success("System stable — no recommendations.")
+    # -------------------------
+    # RECOMMENDED ACTIONS
+    # -------------------------
+    st.markdown("### Recommended Actions")
+    suggestions = out.get("suggestions", {})
+    if suggestions:
+        for var, msg in suggestions.items():
+            st.info(f"**{var.replace('_',' ').title()}** → {msg}")
+    else:
+        st.success("System stable — no recommendations.")

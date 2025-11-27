@@ -1,11 +1,10 @@
-# backend/api.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import pandas as pd
 import math
+import uuid
 
 from backend.local_storage import (
     load_data,
@@ -15,7 +14,8 @@ from backend.local_storage import (
 
 from backend.anomaly import RollingZScoreAnomaly
 from backend.forecast import Forecaster
-from backend.optimize import optimize
+from backend.optimize import optimize as build_suggestions, get_urgent_alerts, dismiss_alert
+
 
 
 # ============================================================
@@ -196,35 +196,29 @@ def optimization():
         anomaly_vars = list(anomaly_df["variable"].unique())
 
     # ------------------------------------------
-    # D) URGENT ALERTS (from anomalies)
+    # D) URGENT ALERTS (based on anomalies)
     # ------------------------------------------
-    urgent_alerts = []
-    for var in anomaly_vars:
-        urgent_alerts.append(
-            f"URGENT: {var.replace('_',' ').title()} is behaving abnormally — immediate attention required."
-        )
+    urgent_alerts = get_urgent_alerts(anomaly_vars)
 
     # ------------------------------------------
     # E) RECOMMENDED ACTIONS (comparison-based)
     # ------------------------------------------
-    suggestions = {}
+    suggestions = build_suggestions(latest, one_hour, anomaly_vars)
 
-    if one_hour:
-        for key in ["sorting_capacity", "staff_available", "vehicles_ready"]:
-            if key in latest and key in one_hour:
-                if one_hour[key] < latest[key]:
-                    suggestions[key] = f"{key.replace('_',' ').title()} is expected to drop — consider boosting resources."
-                elif one_hour[key] > latest[key]:
-                    suggestions[key] = f"{key.replace('_',' ').title()} improving — maintain current operations."
-
-        # congestion special handling
-        if "congestion_level" in latest and "congestion_level" in one_hour:
-            if one_hour["congestion_level"] > latest["congestion_level"] + 0.1:
-                suggestions["congestion_level"] = "Congestion expected to worsen — consider load redistribution."
-
-    return {
+    return clean_json({
         "latest": latest,
         "forecast_next": one_hour,
         "urgent_alerts": urgent_alerts,
-        "suggestions": suggestions
-    }
+        "suggestions": suggestions,
+    })
+
+# ============================================================
+# DISMISS URGENT ALERT
+# ============================================================
+@app.post("/dismiss_alert")
+def dismiss_alert_endpoint(alert_id: str):
+    """
+    Mark an urgent alert as dismissed so it doesn't reappear.
+    """
+    dismiss_alert(alert_id)
+    return {"status": "ok", "dismissed": alert_id}
