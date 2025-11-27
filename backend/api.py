@@ -1,11 +1,10 @@
-# backend/api.py
-
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from apscheduler.schedulers.background import BackgroundScheduler
 
 import pandas as pd
 import math
+import uuid
 
 from backend.local_storage import (
     load_data,
@@ -15,7 +14,8 @@ from backend.local_storage import (
 
 from backend.anomaly import RollingZScoreAnomaly
 from backend.forecast import Forecaster
-from backend.optimize import optimize
+from backend.optimize import optimize as build_suggestions, get_urgent_alerts, dismiss_alert
+
 
 
 # ============================================================
@@ -167,55 +167,72 @@ def forecast_one_hour():
 # OPTIMIZATION ENGINE
 # ============================================================
 @app.get("/optimize")
-def optimization():
+def optimization(threshold: float = 2.5, window: int = 10):
     df = load_data()
 
-    if df.empty:
-        return {"error": "no data yet"}
+    if df.empty or len(df) < 5:
+        return {"error": "Not enough data yet"}
 
-    latest_row = df.iloc[-1].to_dict()
-    latest = {
-        k: v for k, v in latest_row.items()
-        if k in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]
-    }
+    # A) latest
+    latest = df.iloc[-1].to_dict()
 
-    # --- Forecast next hour ---
+    # B) 1-hour forecast
     fc = Forecaster()
     fc.fit(df)
-    fc_next = fc.forecast_one_hour(df)
+    one_hour = fc.forecast_one_hour(df)
 
-    if fc_next is None:
-        return {
-            "status": "stable",
-            "message": "Not enough data to generate forecast.",
-            "latest": clean_json(latest)
-        }
+    # C) anomaly detection – now using the requested threshold/window
+    anomaly_model = RollingZScoreAnomaly(window=window, threshold=threshold)
+    anomaly_df = anomaly_model.compute(df)
 
-    forecast_next = clean_json(fc_next)
+    anomaly_vars = []
+    if anomaly_df is not None and len(anomaly_df) > 0:
+        anomaly_vars = list(anomaly_df["variable"].unique())
 
-    # --- Anomaly scan ---
-    model = RollingZScoreAnomaly(window=10, threshold=2.5)
-    ast = model.compute(df)
+    # D) urgent alerts from anomalies
+    urgent_alerts = []
+    for var in anomaly_vars:
+        alert_id = f"{var}-alert"
 
-    if ast.empty:
-        anomaly_vars = []
-    else:
-        anomaly_vars = list(ast["variable"].unique())
+        if alert_id not in DISMISSED_ALERTS:
+            urgent_alerts.append({
+                "id": alert_id,
+                "message": f"URGENT: {var.replace('_',' ').title()} is behaving abnormally — immediate attention required."
+            })
 
-    # --- Optimization suggestions ---
-    suggestions = optimize(latest, forecast_next, anomaly_vars)
+    # E) comparison-based suggestions (keep your existing logic)
+    suggestions = {}
 
-    if not suggestions:
-        return clean_json({
-            "status": "stable",
-            "message": "All metrics appear stable.",
-            "latest": latest,
-            "forecast_next": forecast_next
-        })
+    if one_hour:
+        for key in ["sorting_capacity", "staff_available", "vehicles_ready"]:
+            if key in latest and key in one_hour:
+                if one_hour[key] < latest[key]:
+                    suggestions[key] = (
+                        f"{key.replace('_',' ').title()} is expected to drop — consider boosting resources."
+                    )
+                elif one_hour[key] > latest[key]:
+                    suggestions[key] = (
+                        f"{key.replace('_',' ').title()} improving — maintain current operations."
+                    )
+
+        if "congestion_level" in latest and "congestion_level" in one_hour:
+            if one_hour["congestion_level"] > latest["congestion_level"] + 0.1:
+                suggestions["congestion_level"] = (
+                    "Congestion expected to worsen — consider load redistribution."
+                )
 
     return clean_json({
-        "status": "action_required",
         "latest": latest,
-        "forecast_next": forecast_next,
-        "suggestions": suggestions
+        "forecast_next": one_hour,
+        "urgent_alerts": urgent_alerts,
+        "suggestions": suggestions,
     })
+
+from fastapi import Request
+
+DISMISSED_ALERTS = set()
+
+@app.post("/dismiss_alert")
+def dismiss_alert(alert_id: str):
+    DISMISSED_ALERTS.add(alert_id)
+    return {"status": "dismissed", "id": alert_id}

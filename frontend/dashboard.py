@@ -11,9 +11,9 @@ st.set_page_config(page_title="Operations Dashboard", layout="wide")
 
 BASE = "http://127.0.0.1:8000"
 
-st.title("📦 Operations Control Dashboard")
+st.title("Operations Control Dashboard")
 
-tabs = st.tabs([" KPIs", "🔍Anomalies", "Forecast", "Optimization"])
+tabs = st.tabs([" KPIs", "Anomalies", "Forecast", "Optimization"])
 
 # -----------------------------------------
 # TAB 1 — LIVE KPIs
@@ -39,9 +39,16 @@ with tabs[0]:
     }
 
     try:
+        # -------------------------
         # Load data
+        # -------------------------
         data = requests.get(f"{BASE}/data").json()
         df = pd.DataFrame(data)
+
+        if df.empty:
+            st.warning("No data available.")
+            st.stop()
+
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
 
         # Apply interval filter
@@ -49,43 +56,35 @@ with tabs[0]:
             cutoff = df["timestamp"].max() - pd.Timedelta(hours=interval_hours[interval])
             df = df[df["timestamp"] >= cutoff]
 
-        # Load anomalies
+        # -------------------------
+        # Load anomaly rows properly
+        # -------------------------
         anomalies = requests.get(f"{BASE}/anomalies").json()
-        df_anom = pd.DataFrame(anomalies)
-        if not df_anom.empty:
-            df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"])
 
-        # === KPI charts with anomaly markers ===
+        df_anom = pd.DataFrame(anomalies.get("anomalies", []))  # ← FIXED
+
+        if not df_anom.empty and "timestamp" in df_anom.columns:
+            df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"], format="mixed")
+
+        # -------------------------
+        # KPI Line Charts
+        # -------------------------
         for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
             fig = px.line(df, x="timestamp", y=col, markers=True)
-
-            # === FIXED ANOMALY HIGHLIGHTING ===
-            if not df_anom.empty:
-                df_anom_col = df_anom[df_anom["variable"] == col]
-
-                if not df_anom_col.empty:
-                    fig.add_scatter(
-                        x=df_anom_col["timestamp"],
-                        y=df_anom_col[col],
-                        mode="markers",
-                        marker=dict(size=10, color="red", symbol="circle"),
-                        name="Anomaly"
-                    )
-
             st.plotly_chart(fig, width='stretch')
 
     except Exception as e:
-        st.error(e)
+        st.error(f"KPI Error: {e}")
 
 
 # ------------------------------------------------
 # TAB 2 — ANOMALIES (with slider + indicator)
 # ------------------------------------------------
 with tabs[1]:
-    st.subheader("🔍 Anomaly Detection")
+    st.subheader("Anomaly Detection")
 
     st.caption("Adjust detection sensitivity (lower threshold → more anomalies)")
-    
+
     # Sensitivity controls
     threshold = st.slider(
         "Z-Score Threshold",
@@ -93,6 +92,7 @@ with tabs[1]:
         max_value=5.0,
         value=2.5,
         step=0.1,
+        key="anomaly_threshold"         
     )
 
     window = st.slider(
@@ -101,6 +101,7 @@ with tabs[1]:
         max_value=30,
         value=10,
         step=1,
+        key="anomaly_window"       
     )
 
     try:
@@ -109,12 +110,12 @@ with tabs[1]:
         ).json()
 
         if resp.get("status") == "no_anomalies":
-            st.success("✅ No anomalies detected.")
+            st.success("No anomalies detected.")
         else:
             anomalies = resp.get("anomalies", [])
 
             if len(anomalies) == 0:
-                st.success("✅ No anomalies detected.")
+                st.success(" No anomalies detected.")
             else:
                 df_anom = pd.DataFrame(anomalies)
 
@@ -123,8 +124,8 @@ with tabs[1]:
                     df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"], format="mixed")
                     df_anom = df_anom.sort_values("timestamp", ascending=False)
 
-                st.error("🚨 Anomalies Detected!")
-                st.markdown("### 📋 Latest Anomalies (Newest First)")
+                st.error(" Anomalies Detected!")
+                st.markdown("### Latest Anomalies (Newest First)")
                 st.dataframe(df_anom)
 
     except Exception as e:
@@ -133,7 +134,7 @@ with tabs[1]:
 # TAB 3 — FORECAST (24 HOURS ONLY)
 # ------------------------------------------------
 with tabs[2]:
-    st.subheader("📈 24-Hour Forecast")
+    st.subheader(" 24-Hour Forecast")
 
     try:
         fc24 = requests.get(f"{BASE}/forecast").json()
@@ -160,7 +161,7 @@ with tabs[2]:
                 # ---------------------------------------------------------
                 # GRAPHS
                 # ---------------------------------------------------------
-                st.markdown("### 📉 Forecast Trends (24 Hours)")
+                st.markdown("### Forecast Trends (24 Hours)")
 
                 for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
                     fig = px.line(df_fc24, x="timestamp", y=col, markers=True)
@@ -170,7 +171,7 @@ with tabs[2]:
                 # ---------------------------------------------------------
                 # TABLE
                 # ---------------------------------------------------------
-                st.markdown("### 📋 Forecast Table (24 Hours)")
+                st.markdown("###  Forecast Table (24 Hours)")
                 st.dataframe(df_fc24.sort_values("timestamp", ascending=False))
 
     except Exception as e:
@@ -180,68 +181,104 @@ with tabs[2]:
 # TAB 4 — Optimization
 # -----------------------------------------
 with tabs[3]:
+    st.subheader("Optimization & Proactive Actions")
 
-    out = requests.get(f"{BASE}/optimize").json()
+    threshold = st.session_state.get("anomaly_threshold", 2.5)
+    window = st.session_state.get("anomaly_window", 10)
 
-    # ---- LATEST METRICS (not dropdown, not JSON) ----
+    out = requests.get(
+        f"{BASE}/optimize",
+        params={"threshold": threshold, "window": window},
+    ).json()
+
+    # -------------------------
+    # LATEST METRICS
+    # -------------------------
     if "latest" in out:
         latest = out["latest"]
-        st.markdown("### 📌 Latest Metrics (Current Status)")
+        st.markdown("### Latest Metrics (Current Status)")
 
         cols = st.columns(4)
-        metric_keys = list(latest.keys())
+        metric_order = [
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ]
 
-        # Display in 4-column grid, excluding timestamp
-        display_keys = [k for k in metric_keys if k != "timestamp"]
-
-        for i, key in enumerate(display_keys):
-
-            value = latest[key]
-
-            if key == "congestion_level":
-                value = f"{value*100:.1f}%"
-
-            cols[i % 4].metric(label=key.replace("_", " ").title(), value=value)
-        st.markdown("---")
-
-    # ---- 1-HOUR FORECAST (metric-style, same layout) ----
-    if "forecast_next" in out:
-        fc = out["forecast_next"]
-        st.markdown("### 🕒 1-Hour Forecast")
-
-        # Convert values
-        formatted_fc = {}
-        for key, value in fc.items():
-            if key == "timestamp":
-                formatted_fc[key] = value
-            elif key == "congestion_level":
-                formatted_fc[key] = f"{int(value * 100)}%"
-            else:
-                formatted_fc[key] = int(value)
-
-        # Display in metric grid
-        cols_fc = st.columns(4)
-        for i, (key, value) in enumerate(formatted_fc.items()):
-            if key == "timestamp":
+        for i, key in enumerate(metric_order):
+            value = latest.get(key)
+            if value is None:
                 continue
 
-            label = key.replace("_", " ").title()
-            cols_fc[i % 4].metric(label=label, value=value)
+            if key == "congestion_level":
+                value = f"{value * 100:.1f}%"
 
-        st.caption(f"Forecast time: {formatted_fc['timestamp']}")
+            cols[i].metric(label=key.replace("_", " ").title(), value=value)
+
         st.markdown("---")
 
-    # ---- RECOMMENDATIONS ----
-    st.markdown("### 💡 Recommended Actions")
+    # -------------------------
+    # 1-HOUR FORECAST
+    # -------------------------
+    if "forecast_next" in out:
+        fc = out["forecast_next"]
+        st.markdown("### 1-Hour Forecast")
 
-    suggestions = out.get("suggestions", {})
+        cols_fc = st.columns(4)
+        fc_order = [
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ]
 
-    if suggestions.get("status") == "stable":
-        st.success(" System operating normally. No optimization required.")
+        for i, key in enumerate(fc_order):
+            value = fc.get(key)
+            if value is None:
+                continue
+
+            if key == "congestion_level":
+                value = f"{value * 100:.1f}%"
+            else:
+                value = int(value)
+
+            cols_fc[i].metric(label=key.replace("_", " ").title(), value=value)
+
+        st.caption(f"Forecast time: {fc.get('timestamp', '')}")
+        st.markdown("---")
+
+    # -------------------------
+    # URGENT ALERTS
+    # -------------------------
+    urgent = out.get("urgent_alerts", [])
+    st.markdown("### Urgent Alerts")
+
+    if urgent:
+        for alert in urgent:
+            box = st.container()
+            with box:
+                st.error(alert["message"])
+
+                # dismiss button
+                if st.button("Dismiss", key=f"dismiss_{alert['id']}"):
+                    requests.post(
+                        f"{BASE}/dismiss_alert",
+                        params={"alert_id": alert["id"]}
+                    )
+                    st.rerun()
     else:
-        actions = suggestions.get("actions", [])
-        if not actions:
-            st.info("No optimization suggestions available at the moment.")
-        else:
-            for act in actions:
-                st.write(f"• {act}")
+        st.success("No urgent alerts.")
+
+    st.markdown("---")
+
+    # -------------------------
+    # RECOMMENDED ACTIONS
+    # -------------------------
+    st.markdown("### Recommended Actions")
+    suggestions = out.get("suggestions", {})
+    if suggestions:
+        for var, msg in suggestions.items():
+            st.info(f"**{var.replace('_',' ').title()}** → {msg}")
+    else:
+        st.success("System stable — no recommendations.")
