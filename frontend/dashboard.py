@@ -129,101 +129,52 @@ with tabs[1]:
 
     except Exception as e:
         st.error(f"Anomaly Error: {e}")
-# -----------------------------------------------------------
-# TAB 3 — FORECAST (24-HOUR + 1-HOUR TRENDS)
-# -----------------------------------------------------------
+# ------------------------------------------------
+# TAB 3 — FORECAST (24 HOURS ONLY)
+# ------------------------------------------------
 with tabs[2]:
-    st.subheader("📅 Forecast Module")
-
-    # =======================================================
-    # SECTION A — 24-HOUR FORECAST (like optimization tab)
-    # =======================================================
-    st.markdown("## 🔮 24-Hour Forecast Summary")
+    st.subheader("📈 24-Hour Forecast")
 
     try:
         fc24 = requests.get(f"{BASE}/forecast").json()
 
+        # Handle backend errors
         if isinstance(fc24, dict) and "error" in fc24:
             st.warning(fc24["error"])
         else:
-            df24 = pd.DataFrame(fc24)
+            df_fc24 = pd.DataFrame(fc24)
 
-            df24["timestamp"] = pd.to_datetime(df24["timestamp"], format="mixed")
-            df24["congestion_level"] = (df24["congestion_level"] * 100).round(1)
+            if df_fc24.empty or "timestamp" not in df_fc24.columns:
+                st.warning("Not enough information for 24-hour forecast.")
+            else:
+                # Convert timestamp
+                df_fc24["timestamp"] = pd.to_datetime(df_fc24["timestamp"], format="mixed")
 
-            for col in ["sorting_capacity", "staff_available", "vehicles_ready"]:
-                df24[col] = df24[col].astype(int)
+                # Convert congestion to percentage
+                df_fc24["congestion_level"] = (df_fc24["congestion_level"] * 100).round(1)
 
-            # Display table
-            st.markdown("### 📋 24-Hour Forecast Table")
-            st.dataframe(df24.sort_values("timestamp", ascending=False))
+                # Ensure integer formatting for integer KPIs
+                for col in ["sorting_capacity", "staff_available", "vehicles_ready"]:
+                    df_fc24[col] = df_fc24[col].astype(int)
 
-            # Small metrics display (latest predicted)
-            latest_fc = df24.iloc[-1]
+                # ---------------------------------------------------------
+                # GRAPHS
+                # ---------------------------------------------------------
+                st.markdown("### 📉 Forecast Trends (24 Hours)")
 
-            colA, colB, colC, colD = st.columns(4)
-            colA.metric("Sorting Capacity", latest_fc["sorting_capacity"])
-            colB.metric("Staff Available", latest_fc["staff_available"])
-            colC.metric("Vehicles Ready", latest_fc["vehicles_ready"])
-            colD.metric("Congestion Level (%)", latest_fc["congestion_level"])
+                for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
+                    fig = px.line(df_fc24, x="timestamp", y=col, markers=True)
+                    fig.update_layout(height=260)
+                    st.plotly_chart(fig, width='stretch')
+
+                # ---------------------------------------------------------
+                # TABLE
+                # ---------------------------------------------------------
+                st.markdown("### 📋 Forecast Table (24 Hours)")
+                st.dataframe(df_fc24.sort_values("timestamp", ascending=False))
 
     except Exception as e:
         st.error(f"24-Hour Forecast Error: {e}")
-
-
-
-    # =======================================================
-    # SECTION B — 1-HOUR FORECAST with TREND LINES
-    # =======================================================
-    st.markdown("## ⏱ 1-Hour Forecast (Detailed Trends)")
-
-    try:
-        # Request 1-hour forecast
-        fc1 = requests.get(f"{BASE}/forecast_one_hour").json()
-
-        if isinstance(fc1, dict) and "error" in fc1:
-            st.warning(fc1["error"])
-        else:
-            # ----------------------------
-            # Build a trend: latest real + forecast
-            # ----------------------------
-            latest_real = requests.get(f"{BASE}/data?limit=1").json()[0]
-
-            trend_df = pd.DataFrame([
-                latest_real,
-                fc1
-            ])
-
-            trend_df["timestamp"] = pd.to_datetime(trend_df["timestamp"], format="mixed")
-
-            # Apply formatting
-            trend_df["congestion_level"] = (trend_df["congestion_level"] * 100).round(1)
-            for col in ["sorting_capacity", "staff_available", "vehicles_ready"]:
-                trend_df[col] = trend_df[col].astype(int)
-
-            # ----------------------------
-            # Display 1-hour forecast table
-            # ----------------------------
-            st.markdown("### 📋 1-Hour Forecast Table")
-            st.dataframe(pd.DataFrame([fc1]))
-
-            # ----------------------------
-            # Trend charts with movement
-            # ----------------------------
-            st.markdown("### 📈 1-Hour Forecast Trend Charts")
-
-            chart_cols = ["sorting_capacity", "staff_available",
-                          "vehicles_ready", "congestion_level"]
-
-            for col in chart_cols:
-                fig = px.line(trend_df, x="timestamp", y=col, markers=True,
-                              title=f"{col.replace('_', ' ').title()} Trend")
-                fig.update_layout(height=260)
-                st.plotly_chart(fig, width='stretch')
-
-    except Exception as e:
-        st.error(f"1-Hour Forecast Error: {e}")
-
 
 # -----------------------------------------
 # TAB 4 — Optimization

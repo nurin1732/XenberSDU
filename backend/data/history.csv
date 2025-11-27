@@ -1,3 +1,2 @@
 timestamp,sorting_capacity,staff_available,vehicles_ready,congestion_level,inbound_volume,outbound_volume,packages_arrived,packages_departed
-2025-11-27 03:04:00,60,11,7,0.89,196.0,178.0,427.0,329.0
-
+2025-11-27 16:11:00,104,22,7,0.6,324,158,309,223
