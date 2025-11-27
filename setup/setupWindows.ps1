@@ -1,56 +1,45 @@
 # Requires PowerShell 5+ or PowerShell 7+
-# ===============================================
-# setupWindows.ps1
-# ===============================================
+Write-Host ">>> Starting XenberSDU setup..." -ForegroundColor Cyan
 
-# Allow running scripts for this session
+# 1. Project root = parent of the setup folder
+$projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
+
+# Quote the path to handle spaces
+Set-Location "$projectRoot"
+Write-Host "Project folder: $projectRoot" -ForegroundColor Green
+
+# 2. Allow scripts to run in this session
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
-# Move to project root (quote the path to handle spaces)
-$projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-Set-Location "$projectRoot\.."
-
-# ===============================================
-# 1. Create virtual environment if it doesn't exist
-# ===============================================
-if (-not (Test-Path "venv")) {
-    Write-Host "Creating virtual environment..."
+# 3. Create virtual environment if missing
+if (!(Test-Path "./venv")) {
+    Write-Host "Creating virtual environment..." -ForegroundColor Yellow
     python -m venv venv
 } else {
-    Write-Host "Virtual environment already exists."
+    Write-Host "Virtual environment already exists." -ForegroundColor Green
 }
 
-# ===============================================
-# 2. Activate virtual environment
-# ===============================================
+# 4. Activate virtual environment
 Write-Host "Activating virtual environment..."
 & ".\venv\Scripts\Activate.ps1"
 
-# ===============================================
-# 3. Install dependencies
-# ===============================================
-Write-Host "Installing dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
-
-# ===============================================
-# 4. Launch backend in a new PowerShell window
-# ===============================================
-Write-Host "Starting backend..."
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$PWD\backend`"; .\venv\Scripts\python.exe -m uvicorn api:app --reload"
-
-# ===============================================
-# 5. Wait until backend is ready
-# ===============================================
-Write-Host "Waiting for backend to start..."
-while (-not (Test-NetConnection -ComputerName localhost -Port 8000).TcpTestSucceeded) {
-    Start-Sleep -Seconds 1
+# 5. Install dependencies
+if (Test-Path "./requirements.txt") {
+    Write-Host "Installing dependencies..." -ForegroundColor Yellow
+    pip install -r requirements.txt
+} else {
+    Write-Host "requirements.txt not found. Skipping." -ForegroundColor Red
 }
 
-# ===============================================
-# 6. Launch frontend in a new PowerShell window
-# ===============================================
-Write-Host "Starting frontend..."
-Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd `"$PWD\frontend`"; ..\venv\Scripts\python.exe -m streamlit run `"`dashboard.py`"`"
+# 6. Start backend in a new PowerShell window
+Write-Host "Starting backend..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command",
+"cd `"$projectRoot`"; & `".\venv\Scripts\Activate.ps1`"; python -m uvicorn backend.api:app --reload"
 
-Write-Host "All done! Backend and frontend are running
+# 7. Start frontend in a new PowerShell window
+Write-Host "Starting frontend..." -ForegroundColor Cyan
+Start-Process powershell -ArgumentList "-NoExit", "-Command",
+"cd `"$projectRoot`"; & `".\venv\Scripts\Activate.ps1`"; python -m streamlit run frontend/dashboard.py"
+
+Write-Host ">>> Setup complete! Backend and frontend are running." -ForegroundColor Green
+
