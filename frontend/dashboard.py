@@ -13,7 +13,7 @@ BASE = "http://127.0.0.1:8000"
 
 st.title("📦 Operations Control Dashboard")
 
-tabs = st.tabs(["📊 KPIs", "🔍 Anomalies", "⚠ Optimization", "📈 Forecast"])
+tabs = st.tabs([" KPIs", "🔍Anomalies", "Forecast", "Optimization"])
 
 # -----------------------------------------
 # TAB 1 — LIVE KPIs
@@ -108,26 +108,78 @@ with tabs[1]:
             f"{BASE}/anomalies?threshold={threshold}&window={window}"
         ).json()
 
-        if "status" in resp and resp["status"] == "no_anomalies":
+        if resp.get("status") == "no_anomalies":
             st.success("✅ No anomalies detected.")
         else:
-            anomalies = resp["anomalies"]
+            anomalies = resp.get("anomalies", [])
+
             if len(anomalies) == 0:
                 st.success("✅ No anomalies detected.")
             else:
+                df_anom = pd.DataFrame(anomalies)
+
+                # Convert timestamp for sorting
+                if "timestamp" in df_anom.columns:
+                    df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"], format="mixed")
+                    df_anom = df_anom.sort_values("timestamp", ascending=False)
+
                 st.error("🚨 Anomalies Detected!")
-                st.dataframe(anomalies)
+                st.markdown("### 📋 Latest Anomalies (Newest First)")
+                st.dataframe(df_anom)
 
     except Exception as e:
-        st.error(e)
-
-
-
-# -----------------------------------------
-# TAB 3 — Optimization
-# -----------------------------------------
+        st.error(f"Anomaly Error: {e}")
+# ------------------------------------------------
+# TAB 3 — FORECAST (24 HOURS ONLY)
+# ------------------------------------------------
 with tabs[2]:
-    st.subheader("⚡ Optimization Suggestions")
+    st.subheader("📈 24-Hour Forecast")
+
+    try:
+        fc24 = requests.get(f"{BASE}/forecast").json()
+
+        # Handle backend errors
+        if isinstance(fc24, dict) and "error" in fc24:
+            st.warning(fc24["error"])
+        else:
+            df_fc24 = pd.DataFrame(fc24)
+
+            if df_fc24.empty or "timestamp" not in df_fc24.columns:
+                st.warning("Not enough information for 24-hour forecast.")
+            else:
+                # Convert timestamp
+                df_fc24["timestamp"] = pd.to_datetime(df_fc24["timestamp"], format="mixed")
+
+                # Convert congestion to percentage
+                df_fc24["congestion_level"] = (df_fc24["congestion_level"] * 100).round(1)
+
+                # Ensure integer formatting for integer KPIs
+                for col in ["sorting_capacity", "staff_available", "vehicles_ready"]:
+                    df_fc24[col] = df_fc24[col].astype(int)
+
+                # ---------------------------------------------------------
+                # GRAPHS
+                # ---------------------------------------------------------
+                st.markdown("### 📉 Forecast Trends (24 Hours)")
+
+                for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
+                    fig = px.line(df_fc24, x="timestamp", y=col, markers=True)
+                    fig.update_layout(height=260)
+                    st.plotly_chart(fig, width='stretch')
+
+                # ---------------------------------------------------------
+                # TABLE
+                # ---------------------------------------------------------
+                st.markdown("### 📋 Forecast Table (24 Hours)")
+                st.dataframe(df_fc24.sort_values("timestamp", ascending=False))
+
+    except Exception as e:
+        st.error(f"24-Hour Forecast Error: {e}")
+
+# -----------------------------------------
+# TAB 4 — Optimization
+# -----------------------------------------
+with tabs[3]:
 
     out = requests.get(f"{BASE}/optimize").json()
 
@@ -193,79 +245,3 @@ with tabs[2]:
         else:
             for act in actions:
                 st.write(f"• {act}")
-
-# -----------------------------------------
-# TAB 4 — Forecast (Next 24 Hours)
-# -----------------------------------------
-with tabs[3]:
-    st.subheader(" 24-Hour Forecast")
-
-    try:
-        out = requests.get(f"{BASE}/forecast").json()
-        df_fc = pd.DataFrame(out)
-
-        if df_fc.empty or "timestamp" not in df_fc.columns:
-            st.warning("Forecast unavailable — need more historical data.")
-        else:
-            # Convert timestamp safely
-            df_fc["timestamp"] = pd.to_datetime(df_fc["timestamp"], errors="coerce")
-
-            #Convert numeric columns
-            numeric_cols = [
-                "sorting_capacity",
-                "staff_available",
-                "vehicles_ready",
-                "inbound_volume",
-                "outbound_volume",
-                "packages_arrived",
-                "packages_departed"
-            ]
-
-            # Convert all numeric values to int
-            for col in numeric_cols:
-                if col in df_fc.columns:
-                    df_fc[col] = df_fc[col].astype(int)
-
-            # 🔥 Convert congestion_level to percentage (0–100)
-            if "congestion_level" in df_fc.columns:
-                df_fc["congestion_level"] = (df_fc["congestion_level"] * 100).astype(int)
-
-            # Sort latest first for table
-            df_fc = df_fc.sort_values("timestamp", ascending=False)
-
-            # ==============================
-            #     FORECAST LINE CHARTS
-            # ==============================
-            st.markdown("### 📊 Forecast Charts")
-
-            # For charts, convert congestion % back to 0–1 scale
-            df_chart = df_fc.copy()
-            if "congestion_level" in df_chart.columns:
-                df_chart["congestion_level"] = df_chart["congestion_level"] / 100.0
-
-            for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
-                if col not in df_chart.columns:
-                    continue
-
-                fig = px.line(
-                    df_chart.sort_values("timestamp"),
-                    x="timestamp",
-                    y=col,
-                    markers=True
-                )
-
-                # Label congestion_level as %
-                if col == "congestion_level":
-                    fig.update_yaxes(tickformat=".0%")  # show % on chart
-
-                fig.update_layout(height=280)
-                st.plotly_chart(fig, width='stretch')
-
-            # ==============================
-            #     FORECAST TABLE
-            # ==============================
-            st.markdown("### 📋 Forecast Table (Latest First)")
-            st.dataframe(df_fc)
-
-    except Exception as e:
-        st.error(f"Forecast error: {e}")

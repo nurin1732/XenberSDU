@@ -1,44 +1,25 @@
-def optimize(latest, forecast_next):
-    suggestions = {}
+# backend/optimization/optimizer.py
 
-    # ---------- SAFETY CHECK ----------
-    if not latest or not forecast_next:
-        return {"note": "Not enough data for optimization yet."}
+def optimize(latest, forecast, anomaly_vars=None):
+    """
+    Generate recommended operational actions based on which variables
+    are showing anomalies.
+    """
+    if anomaly_vars is None:
+        anomaly_vars = []
 
-    # ----- 1: Sorting Capacity -----
-    if "sorting_capacity" in latest and "sorting_capacity" in forecast_next:
-        diff = forecast_next["sorting_capacity"] - latest["sorting_capacity"]
-        if diff > 10:
-            suggestions["Sorting Capacity"] = (
-                f"Sorting throughput may need to increase by ~{int(diff)} units."
-            )
+    ACTIONS = {
+        "sorting_capacity": "Increase sorting throughput by adjusting machine schedules or reallocating tasks.",
+        "staff_available": "Bring in backup staff or redistribute team workload.",
+        "vehicles_ready": "Activate additional vehicles or streamline dispatch timing.",
+        "congestion_level": "Reroute parcels or expand sorting buffer capacity to reduce congestion.",
+    }
 
-    # ----- 2: Staff Availability -----
-    if "staff_available" in latest and "staff_available" in forecast_next:
-        if forecast_next["staff_available"] < latest["staff_available"] - 5:
-            suggestions["Staff Allocation"] = (
-                "Expected staff shortage — consider reallocating additional staff."
-            )
+    recommendations = {}
 
-    # ----- 3: Vehicles Ready -----
-    if "vehicles_ready" in latest and "vehicles_ready" in forecast_next:
-        if forecast_next["vehicles_ready"] < 5:
-            suggestions["Fleet Dispatch"] = (
-                "Low vehicle availability forecasted — prepare more outbound vehicles."
-            )
+    # Only suggest actions for variables that are actually anomalous
+    for var in anomaly_vars:
+        if var in ACTIONS:
+            recommendations[var] = ACTIONS[var]
 
-    # ----- 4: Congestion Level -----
-    if "congestion_level" in latest and "congestion_level" in forecast_next:
-        if forecast_next["congestion_level"] > 60:
-            suggestions["Congestion Control"] = (
-                "High congestion expected — activate load balancing or rerouting."
-            )
-
-    # ---------- STABLE FALLBACK ----------
-    if not suggestions:
-        return {
-            "status": "stable",
-            "message": "📘 System operating normally. No optimization required."
-        }
-
-    return suggestions
+    return recommendations
