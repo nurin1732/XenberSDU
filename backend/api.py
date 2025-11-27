@@ -167,43 +167,59 @@ def forecast_one_hour():
 # OPTIMIZATION ENGINE
 # ============================================================
 @app.get("/optimize")
-def optimization():
+def optimization(threshold: float = 2.5, window: int = 10):
     df = load_data()
 
     if df.empty or len(df) < 5:
         return {"error": "Not enough data yet"}
 
-    # ------------------------------------------
-    # A) LATEST STATE
-    # ------------------------------------------
+    # A) latest
     latest = df.iloc[-1].to_dict()
 
-    # ------------------------------------------
-    # B) FORECAST 1-HOUR
-    # ------------------------------------------
+    # B) 1-hour forecast
     fc = Forecaster()
     fc.fit(df)
     one_hour = fc.forecast_one_hour(df)
 
-    # ------------------------------------------
-    # C) ANOMALY DETECTION
-    # ------------------------------------------
-    anomaly_model = RollingZScoreAnomaly(window=10, threshold=2.5)
+    # C) anomaly detection – now using the requested threshold/window
+    anomaly_model = RollingZScoreAnomaly(window=window, threshold=threshold)
     anomaly_df = anomaly_model.compute(df)
 
     anomaly_vars = []
     if anomaly_df is not None and len(anomaly_df) > 0:
         anomaly_vars = list(anomaly_df["variable"].unique())
 
-    # ------------------------------------------
-    # D) URGENT ALERTS (based on anomalies)
-    # ------------------------------------------
-    urgent_alerts = get_urgent_alerts(anomaly_vars)
+    # D) urgent alerts from anomalies
+    urgent_alerts = []
+    for var in anomaly_vars:
+        alert_id = f"{var}-alert"
 
-    # ------------------------------------------
-    # E) RECOMMENDED ACTIONS (comparison-based)
-    # ------------------------------------------
-    suggestions = build_suggestions(latest, one_hour, anomaly_vars)
+        if alert_id not in DISMISSED_ALERTS:
+            urgent_alerts.append({
+                "id": alert_id,
+                "message": f"URGENT: {var.replace('_',' ').title()} is behaving abnormally — immediate attention required."
+            })
+
+    # E) comparison-based suggestions (keep your existing logic)
+    suggestions = {}
+
+    if one_hour:
+        for key in ["sorting_capacity", "staff_available", "vehicles_ready"]:
+            if key in latest and key in one_hour:
+                if one_hour[key] < latest[key]:
+                    suggestions[key] = (
+                        f"{key.replace('_',' ').title()} is expected to drop — consider boosting resources."
+                    )
+                elif one_hour[key] > latest[key]:
+                    suggestions[key] = (
+                        f"{key.replace('_',' ').title()} improving — maintain current operations."
+                    )
+
+        if "congestion_level" in latest and "congestion_level" in one_hour:
+            if one_hour["congestion_level"] > latest["congestion_level"] + 0.1:
+                suggestions["congestion_level"] = (
+                    "Congestion expected to worsen — consider load redistribution."
+                )
 
     return clean_json({
         "latest": latest,
@@ -212,13 +228,11 @@ def optimization():
         "suggestions": suggestions,
     })
 
-# ============================================================
-# DISMISS URGENT ALERT
-# ============================================================
+from fastapi import Request
+
+DISMISSED_ALERTS = set()
+
 @app.post("/dismiss_alert")
-def dismiss_alert_endpoint(alert_id: str):
-    """
-    Mark an urgent alert as dismissed so it doesn't reappear.
-    """
-    dismiss_alert(alert_id)
-    return {"status": "ok", "dismissed": alert_id}
+def dismiss_alert(alert_id: str):
+    DISMISSED_ALERTS.add(alert_id)
+    return {"status": "dismissed", "id": alert_id}

@@ -84,7 +84,7 @@ with tabs[1]:
     st.subheader("Anomaly Detection")
 
     st.caption("Adjust detection sensitivity (lower threshold → more anomalies)")
-    
+
     # Sensitivity controls
     threshold = st.slider(
         "Z-Score Threshold",
@@ -92,6 +92,7 @@ with tabs[1]:
         max_value=5.0,
         value=2.5,
         step=0.1,
+        key="anomaly_threshold"         
     )
 
     window = st.slider(
@@ -100,6 +101,7 @@ with tabs[1]:
         max_value=30,
         value=10,
         step=1,
+        key="anomaly_window"       
     )
 
     try:
@@ -179,8 +181,15 @@ with tabs[2]:
 # TAB 4 — Optimization
 # -----------------------------------------
 with tabs[3]:
+    st.subheader("Optimization & Proactive Actions")
 
-    out = requests.get(f"{BASE}/optimize").json()
+    threshold = st.session_state.get("anomaly_threshold", 2.5)
+    window = st.session_state.get("anomaly_window", 10)
+
+    out = requests.get(
+        f"{BASE}/optimize",
+        params={"threshold": threshold, "window": window},
+    ).json()
 
     # -------------------------
     # LATEST METRICS
