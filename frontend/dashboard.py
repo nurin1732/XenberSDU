@@ -39,9 +39,16 @@ with tabs[0]:
     }
 
     try:
+        # -------------------------
         # Load data
+        # -------------------------
         data = requests.get(f"{BASE}/data").json()
         df = pd.DataFrame(data)
+
+        if df.empty:
+            st.warning("No data available.")
+            st.stop()
+
         df["timestamp"] = pd.to_datetime(df["timestamp"], format="mixed")
 
         # Apply interval filter
@@ -49,33 +56,25 @@ with tabs[0]:
             cutoff = df["timestamp"].max() - pd.Timedelta(hours=interval_hours[interval])
             df = df[df["timestamp"] >= cutoff]
 
-        # Load anomalies
+        # -------------------------
+        # Load anomaly rows properly
+        # -------------------------
         anomalies = requests.get(f"{BASE}/anomalies").json()
-        df_anom = pd.DataFrame(anomalies)
-        if not df_anom.empty:
-            df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"])
 
-        # === KPI charts with anomaly markers ===
+        df_anom = pd.DataFrame(anomalies.get("anomalies", []))  # ← FIXED
+
+        if not df_anom.empty and "timestamp" in df_anom.columns:
+            df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"], format="mixed")
+
+        # -------------------------
+        # KPI Line Charts
+        # -------------------------
         for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
             fig = px.line(df, x="timestamp", y=col, markers=True)
-
-            # === FIXED ANOMALY HIGHLIGHTING ===
-            if not df_anom.empty:
-                df_anom_col = df_anom[df_anom["variable"] == col]
-
-                if not df_anom_col.empty:
-                    fig.add_scatter(
-                        x=df_anom_col["timestamp"],
-                        y=df_anom_col[col],
-                        mode="markers",
-                        marker=dict(size=10, color="red", symbol="circle"),
-                        name="Anomaly"
-                    )
-
             st.plotly_chart(fig, width='stretch')
 
     except Exception as e:
-        st.error(e)
+        st.error(f"KPI Error: {e}")
 
 
 # ------------------------------------------------
@@ -181,80 +180,80 @@ with tabs[2]:
 # -----------------------------------------
 with tabs[3]:
 
-    out = requests.get(f"{BASE}/optimize").json()
+        out = requests.get(f"{BASE}/optimize").json()
 
-# ---- LATEST METRICS (not dropdown, not JSON) ----
-if "latest" in out:
-    latest = out["latest"]
-    st.markdown("### 📌 Latest Metrics (Current Status)")
+    # ---- LATEST METRICS (not dropdown, not JSON) ----
+        if "latest" in out:
+            latest = out["latest"]
+            st.markdown("### 📌 Latest Metrics (Current Status)")
 
-    cols = st.columns(4)
+            cols = st.columns(4)
 
     # Ensure consistent ordering
-    metric_order = [
-        "sorting_capacity",
-        "staff_available",
-        "vehicles_ready",
-        "congestion_level",
-    ]
+        metric_order = [
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ]
 
-    for i, key in enumerate(metric_order):
-        value = latest.get(key, None)
-        if value is None:
-            continue
+        for i, key in enumerate(metric_order):
+            value = latest.get(key, None)
+            if value is None:
+                continue
 
-        # format congestion level
-        if key == "congestion_level":
-            value = f"{value * 100:.1f}%"
+            # format congestion level
+            if key == "congestion_level":
+                value = f"{value * 100:.1f}%"
 
-        cols[i].metric(label=key.replace("_", " ").title(), value=value)
+            cols[i].metric(label=key.replace("_", " ").title(), value=value)
 
-    st.markdown("---")
+        st.markdown("---")
 
 
-# ---- 1-HOUR FORECAST (metric-style, same layout) ----
-if "forecast_next" in out:
-    fc = out["forecast_next"]
-    st.markdown("### ⏱ 1-Hour Forecast")
+    # ---- 1-HOUR FORECAST (metric-style, same layout) ----
+        if "forecast_next" in out:
+            fc = out["forecast_next"]
+        st.markdown("###  1-Hour Forecast")
 
-    # Same keys, same order
-    fc_order = [
-        "sorting_capacity",
-        "staff_available",
-        "vehicles_ready",
-        "congestion_level",
-    ]
+            # Same keys, same order
+        fc_order = [
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ]
 
-    cols_fc = st.columns(4)
+        cols_fc = st.columns(4)
 
-    for i, key in enumerate(fc_order):
-        value = fc.get(key, None)
-        if value is None:
-            continue
+        for i, key in enumerate(fc_order):
+            value = fc.get(key, None)
+            if value is None:
+                continue
 
-        if key == "congestion_level":
-            value = f"{value * 100:.1f}%"
+            if key == "congestion_level":
+                value = f"{value * 100:.1f}%"
+            else:
+                value = int(value)
+
+            cols_fc[i].metric(label=key.replace("_", " ").title(), value=value)
+
+        # timestamp label
+        ts = fc.get("timestamp", "")
+        st.caption(f"Forecast time: {ts}")
+        st.markdown("---")
+
+        # ---- RECOMMENDATIONS ----
+        st.markdown("###  Recommended Actions")
+
+        suggestions = out.get("suggestions", {})
+
+        if suggestions.get("status") == "stable":
+            st.success(" System operating normally. No optimization required.")
         else:
-            value = int(value)
-
-        cols_fc[i].metric(label=key.replace("_", " ").title(), value=value)
-
-    # timestamp label
-    ts = fc.get("timestamp", "")
-    st.caption(f"Forecast time: {ts}")
-    st.markdown("---")
-
-    # ---- RECOMMENDATIONS ----
-    st.markdown("###  Recommended Actions")
-
-    suggestions = out.get("suggestions", {})
-
-    if suggestions.get("status") == "stable":
-        st.success(" System operating normally. No optimization required.")
-    else:
-        actions = suggestions.get("actions", [])
-        if not actions:
-            st.info("No optimization suggestions available at the moment.")
-        else:
-            for act in actions:
-                st.write(f"• {act}")
+            actions = suggestions.get("actions", [])
+            if not actions:
+                st.info("No optimization suggestions available at the moment.")
+            else:
+                for act in actions:
+                    st.write(f"• {act}")
