@@ -11,9 +11,9 @@ st.set_page_config(page_title="Operations Dashboard", layout="wide")
 
 BASE = "http://127.0.0.1:8000"
 
-st.title("📦 Operations Control Dashboard")
+st.title("Operations Control Dashboard")
 
-tabs = st.tabs([" KPIs", "🔍Anomalies", "Forecast", "Optimization"])
+tabs = st.tabs([" KPIs", "Anomalies", "Forecast", "Optimization"])
 
 # -----------------------------------------
 # TAB 1 — LIVE KPIs
@@ -82,7 +82,7 @@ with tabs[0]:
 # TAB 2 — ANOMALIES (with slider + indicator)
 # ------------------------------------------------
 with tabs[1]:
-    st.subheader("🔍 Anomaly Detection")
+    st.subheader("Anomaly Detection")
 
     st.caption("Adjust detection sensitivity (lower threshold → more anomalies)")
     
@@ -109,12 +109,12 @@ with tabs[1]:
         ).json()
 
         if resp.get("status") == "no_anomalies":
-            st.success("✅ No anomalies detected.")
+            st.success("No anomalies detected.")
         else:
             anomalies = resp.get("anomalies", [])
 
             if len(anomalies) == 0:
-                st.success("✅ No anomalies detected.")
+                st.success(" No anomalies detected.")
             else:
                 df_anom = pd.DataFrame(anomalies)
 
@@ -123,8 +123,8 @@ with tabs[1]:
                     df_anom["timestamp"] = pd.to_datetime(df_anom["timestamp"], format="mixed")
                     df_anom = df_anom.sort_values("timestamp", ascending=False)
 
-                st.error("🚨 Anomalies Detected!")
-                st.markdown("### 📋 Latest Anomalies (Newest First)")
+                st.error(" Anomalies Detected!")
+                st.markdown("### Latest Anomalies (Newest First)")
                 st.dataframe(df_anom)
 
     except Exception as e:
@@ -133,7 +133,7 @@ with tabs[1]:
 # TAB 3 — FORECAST (24 HOURS ONLY)
 # ------------------------------------------------
 with tabs[2]:
-    st.subheader("📈 24-Hour Forecast")
+    st.subheader(" 24-Hour Forecast")
 
     try:
         fc24 = requests.get(f"{BASE}/forecast").json()
@@ -160,7 +160,7 @@ with tabs[2]:
                 # ---------------------------------------------------------
                 # GRAPHS
                 # ---------------------------------------------------------
-                st.markdown("### 📉 Forecast Trends (24 Hours)")
+                st.markdown("### Forecast Trends (24 Hours)")
 
                 for col in ["sorting_capacity", "staff_available", "vehicles_ready", "congestion_level"]:
                     fig = px.line(df_fc24, x="timestamp", y=col, markers=True)
@@ -170,7 +170,7 @@ with tabs[2]:
                 # ---------------------------------------------------------
                 # TABLE
                 # ---------------------------------------------------------
-                st.markdown("### 📋 Forecast Table (24 Hours)")
+                st.markdown("###  Forecast Table (24 Hours)")
                 st.dataframe(df_fc24.sort_values("timestamp", ascending=False))
 
     except Exception as e:
@@ -183,56 +183,69 @@ with tabs[3]:
 
     out = requests.get(f"{BASE}/optimize").json()
 
-    # ---- LATEST METRICS (not dropdown, not JSON) ----
-    if "latest" in out:
-        latest = out["latest"]
-        st.markdown("### 📌 Latest Metrics (Current Status)")
+# ---- LATEST METRICS (not dropdown, not JSON) ----
+if "latest" in out:
+    latest = out["latest"]
+    st.markdown("### 📌 Latest Metrics (Current Status)")
 
-        cols = st.columns(4)
-        metric_keys = list(latest.keys())
+    cols = st.columns(4)
 
-        # Display in 4-column grid, excluding timestamp
-        display_keys = [k for k in metric_keys if k != "timestamp"]
+    # Ensure consistent ordering
+    metric_order = [
+        "sorting_capacity",
+        "staff_available",
+        "vehicles_ready",
+        "congestion_level",
+    ]
 
-        for i, key in enumerate(display_keys):
+    for i, key in enumerate(metric_order):
+        value = latest.get(key, None)
+        if value is None:
+            continue
 
-            value = latest[key]
+        # format congestion level
+        if key == "congestion_level":
+            value = f"{value * 100:.1f}%"
 
-            if key == "congestion_level":
-                value = f"{value*100:.1f}%"
+        cols[i].metric(label=key.replace("_", " ").title(), value=value)
 
-            cols[i % 4].metric(label=key.replace("_", " ").title(), value=value)
-        st.markdown("---")
+    st.markdown("---")
 
-    # ---- 1-HOUR FORECAST (metric-style, same layout) ----
-    if "forecast_next" in out:
-        fc = out["forecast_next"]
-        st.markdown("### 🕒 1-Hour Forecast")
 
-        # Convert values
-        formatted_fc = {}
-        for key, value in fc.items():
-            if key == "timestamp":
-                formatted_fc[key] = value
-            elif key == "congestion_level":
-                formatted_fc[key] = f"{int(value * 100)}%"
-            else:
-                formatted_fc[key] = int(value)
+# ---- 1-HOUR FORECAST (metric-style, same layout) ----
+if "forecast_next" in out:
+    fc = out["forecast_next"]
+    st.markdown("### ⏱ 1-Hour Forecast")
 
-        # Display in metric grid
-        cols_fc = st.columns(4)
-        for i, (key, value) in enumerate(formatted_fc.items()):
-            if key == "timestamp":
-                continue
+    # Same keys, same order
+    fc_order = [
+        "sorting_capacity",
+        "staff_available",
+        "vehicles_ready",
+        "congestion_level",
+    ]
 
-            label = key.replace("_", " ").title()
-            cols_fc[i % 4].metric(label=label, value=value)
+    cols_fc = st.columns(4)
 
-        st.caption(f"Forecast time: {formatted_fc['timestamp']}")
-        st.markdown("---")
+    for i, key in enumerate(fc_order):
+        value = fc.get(key, None)
+        if value is None:
+            continue
+
+        if key == "congestion_level":
+            value = f"{value * 100:.1f}%"
+        else:
+            value = int(value)
+
+        cols_fc[i].metric(label=key.replace("_", " ").title(), value=value)
+
+    # timestamp label
+    ts = fc.get("timestamp", "")
+    st.caption(f"Forecast time: {ts}")
+    st.markdown("---")
 
     # ---- RECOMMENDATIONS ----
-    st.markdown("### 💡 Recommended Actions")
+    st.markdown("###  Recommended Actions")
 
     suggestions = out.get("suggestions", {})
 
