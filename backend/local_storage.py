@@ -1,118 +1,176 @@
-import pandas as pd
+# backend/local_storage.py
+
 import os
-import random
+import pandas as pd
+import numpy as np
 from datetime import datetime, timedelta
 
-CSV_PATH = "backend/data/history.csv"
+# Where your CSV lives
+DATA_FILE = "backend/data/history.csv"
 
-# All columns that will always exist
-COLUMNS = [
-    "timestamp",
-    "sorting_capacity",
-    "staff_available",
-    "vehicles_ready",
-    "congestion_level",      # 0–1 float
-    "inbound_volume",
-    "outbound_volume",
-    "packages_arrived",
-    "packages_departed"
-]
+# Global internal simulation clock
+SIM_TIME = None
 
 
-# -----------------------------
-# SAFE VALUE CLEANER
-# -----------------------------
-def safe_value(x):
-    """Ensure no NaN / inf / invalid numeric value ever enters CSV."""
-    if x is None:
-        return 0
-    if isinstance(x, float):
-        if pd.isna(x) or x == float("inf") or x == float("-inf"):
-            return 0
-    return x
-
-
-# -----------------------------
-# INITIAL HISTORY GENERATOR
-# -----------------------------
-def generate_initial_history(n=20):
-    now = datetime.now().replace(second=0, microsecond=0)
-    rows = []
-
-    for i in range(n):
-        ts = now - timedelta(minutes=30 * (n - i))
-
-        row = {
-            "timestamp": ts,
-            "sorting_capacity": safe_value(random.randint(60, 110)),
-            "staff_available": safe_value(random.randint(10, 25)),
-            "vehicles_ready": safe_value(random.randint(4, 12)),
-            "congestion_level": safe_value(round(random.uniform(0.2, 0.8), 2)),
-            "inbound_volume": safe_value(random.randint(150, 350)),
-            "outbound_volume": safe_value(random.randint(80, 250)),
-            "packages_arrived": safe_value(random.randint(300, 700)),
-            "packages_departed": safe_value(random.randint(150, 500)),
-        }
-
-        rows.append(row)
-
-    return pd.DataFrame(rows, columns=COLUMNS)
-
-
-# -----------------------------
-# ENSURE CSV EXISTS
-# -----------------------------
+# ============================================================
+# INITIALIZE HISTORY FILE
+# ============================================================
 def init_history():
-    if not os.path.exists("backend/data"):
-        os.makedirs("backend/data")
+    """
+    Initialize the CSV if missing.
+    Load the last timestamp if it exists.
+    """
+    global SIM_TIME
 
-    if not os.path.exists(CSV_PATH) or os.path.getsize(CSV_PATH) == 0:
-        df = generate_initial_history()
-        df.to_csv(CSV_PATH, index=False)
+    os.makedirs("backend/data", exist_ok=True)
+
+    # If file does not exist → create empty structure
+    if not os.path.exists(DATA_FILE):
+        df = pd.DataFrame(columns=[
+            "timestamp",
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ])
+        df.to_csv(DATA_FILE, index=False)
+        SIM_TIME = datetime.now().replace(second=0, microsecond=0)
+        print("[INIT] Created new CSV history.")
+        return
+
+    # If CSV exists → load last timestamp
+    df = pd.read_csv(DATA_FILE)
+
+    if len(df) > 0:
+        # Use last recorded timestamp
+        SIM_TIME = pd.to_datetime(df["timestamp"].iloc[-1])
+    else:
+        SIM_TIME = datetime.now().replace(second=0, microsecond=0)
+
+    print(f"[INIT] Loaded history. Last timestamp = {SIM_TIME}")
 
 
-# -----------------------------
+# ============================================================
 # LOAD DATA
-# -----------------------------
+# ============================================================
 def load_data():
-    if not os.path.exists(CSV_PATH):
-        init_history()
+    """Load existing CSV safely."""
+    if not os.path.exists(DATA_FILE):
+        return pd.DataFrame(columns=[
+            "timestamp",
+            "sorting_capacity",
+            "staff_available",
+            "vehicles_ready",
+            "congestion_level",
+        ])
 
-    df = pd.read_csv(CSV_PATH, parse_dates=["timestamp"])
+    df = pd.read_csv(DATA_FILE)
 
-    # Additional safety: replace any corrupt numbers
-    df = df.replace([float("inf"), float("-inf")], 0)
-    df = df.fillna(0)
+    # Convert timestamps
+    if "timestamp" in df.columns:
+        df["timestamp"] = pd.to_datetime(df["timestamp"], errors="coerce")
+        df = df.dropna(subset=["timestamp"])
 
     return df
 
 
-# -----------------------------
-# APPEND NEW 30-MINUTE ROW
-# -----------------------------
-def append_random_row():
-    df = load_data()
+# ============================================================
+# REALISTIC GENERATION LOGIC
+# ============================================================
 
-    if df.empty:
-        last_ts = datetime.now().replace(second=0, microsecond=0)
+def generate_sorting_capacity(hour):
+    """
+    Sorting capacity peaks during daytime.
+    Smooth sinusoidal trend + noise.
+    """
+    cycle = np.sin(2 * np.pi * (hour - 6) / 24)
+    cycle = (cycle + 1) / 2  # normalize 0–1
+    base = 60 + 40 * cycle    # 60–100
+    return max(0, int(base + np.random.normal(0, 3)))
+
+
+def generate_staff_available(hour):
+    """
+    Shift-based staffing:
+    8–16 => high, 16–24 => medium, night => low.
+    """
+    if 8 <= hour < 16:
+        staff = 20 + np.random.normal(0, 2)
+    elif 16 <= hour < 24:
+        staff = 14 + np.random.normal(0, 2)
     else:
-        last_ts = df["timestamp"].iloc[-1]
+        staff = 6 + np.random.normal(0, 1)
 
-    next_ts = last_ts + timedelta(minutes=30)
+    return max(0, int(staff))
 
-    new_row = {
-        "timestamp": next_ts,
-        "sorting_capacity": safe_value(random.randint(60, 110)),
-        "staff_available": safe_value(random.randint(10, 25)),
-        "vehicles_ready": safe_value(random.randint(4, 12)),
-        "congestion_level": safe_value(round(random.uniform(0.2, 0.9), 2)),
-        "inbound_volume": safe_value(random.randint(150, 350)),
-        "outbound_volume": safe_value(random.randint(80, 250)),
-        "packages_arrived": safe_value(random.randint(300, 700)),
-        "packages_departed": safe_value(random.randint(150, 500)),
+
+def generate_vehicles_ready(hour):
+    """
+    Vehicles peak before dispatch:
+    - 8 AM
+    - 4 PM
+    """
+    morning_peak = np.exp(-((hour - 8) ** 2) / 6)
+    evening_peak = np.exp(-((hour - 16) ** 2) / 6)
+    readiness = 4 + (morning_peak + evening_peak) * 6 + np.random.normal(0, 0.5)
+    return max(0, int(readiness))
+
+
+def generate_congestion(capacity, staff, vehicles, hour):
+    """
+    Congestion depends on (capacity, staff, time of day).
+    Peaks midday (1 PM).
+    """
+    midday_pressure = np.exp(-((hour - 13) ** 2) / 20)
+
+    congestion = (
+        0.4 * (1 - capacity / 120) +
+        0.3 * (1 - staff / 25) +
+        0.2 * midday_pressure +
+        0.1 * np.random.rand()
+    )
+
+    return float(min(max(congestion, 0.0), 1.0))
+
+
+# ============================================================
+# BUILD A SINGLE NEW ROW
+# ============================================================
+def generate_synthetic_row():
+    global SIM_TIME
+    hour = SIM_TIME.hour
+
+    cap = generate_sorting_capacity(hour)
+    staff = generate_staff_available(hour)
+    veh = generate_vehicles_ready(hour)
+    cong = generate_congestion(cap, staff, veh, hour)
+
+    return {
+        "timestamp": SIM_TIME.strftime("%Y-%m-%d %H:%M:%S"),
+        "sorting_capacity": cap,
+        "staff_available": staff,
+        "vehicles_ready": veh,
+        "congestion_level": cong,
     }
 
-    df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
-    df.to_csv(CSV_PATH, index=False)
 
-    return new_row
+# ============================================================
+# APPEND NEW ROW TO CSV
+# (Called every 5 seconds → advances 30 minutes)
+# ============================================================
+def append_random_row():
+    global SIM_TIME
+
+    df = load_data()
+    row = generate_synthetic_row()
+
+    new_row_df = pd.DataFrame([row])
+    df = pd.concat([df, new_row_df], ignore_index=True)
+
+    df.to_csv(DATA_FILE, index=False)
+
+    # Advance simulation time by 30 minutes
+    SIM_TIME = SIM_TIME + timedelta(minutes=30)
+    SIM_TIME = SIM_TIME.replace(second=0, microsecond=0)
+
+    return row
