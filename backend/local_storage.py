@@ -2,73 +2,116 @@ import pandas as pd
 import os
 import random
 from datetime import datetime, timedelta
-from backend.data_generate import generate_initial_history
 
 CSV_PATH = "backend/data/history.csv"
 
+# All columns that will always exist
+COLUMNS = [
+    "timestamp",
+    "sorting_capacity",
+    "staff_available",
+    "vehicles_ready",
+    "congestion_level",      # 0–1 float
+    "inbound_volume",
+    "outbound_volume",
+    "packages_arrived",
+    "packages_departed"
+]
+
 
 # -----------------------------
-# Initialize history
+# SAFE VALUE CLEANER
+# -----------------------------
+def safe_value(x):
+    """Ensure no NaN / inf / invalid numeric value ever enters CSV."""
+    if x is None:
+        return 0
+    if isinstance(x, float):
+        if pd.isna(x) or x == float("inf") or x == float("-inf"):
+            return 0
+    return x
+
+
+# -----------------------------
+# INITIAL HISTORY GENERATOR
+# -----------------------------
+def generate_initial_history(n=20):
+    now = datetime.now().replace(second=0, microsecond=0)
+    rows = []
+
+    for i in range(n):
+        ts = now - timedelta(minutes=30 * (n - i))
+
+        row = {
+            "timestamp": ts,
+            "sorting_capacity": safe_value(random.randint(60, 110)),
+            "staff_available": safe_value(random.randint(10, 25)),
+            "vehicles_ready": safe_value(random.randint(4, 12)),
+            "congestion_level": safe_value(round(random.uniform(0.2, 0.8), 2)),
+            "inbound_volume": safe_value(random.randint(150, 350)),
+            "outbound_volume": safe_value(random.randint(80, 250)),
+            "packages_arrived": safe_value(random.randint(300, 700)),
+            "packages_departed": safe_value(random.randint(150, 500)),
+        }
+
+        rows.append(row)
+
+    return pd.DataFrame(rows, columns=COLUMNS)
+
+
+# -----------------------------
+# ENSURE CSV EXISTS
 # -----------------------------
 def init_history():
-    """Ensure CSV exists with at least one initial row."""
     if not os.path.exists("backend/data"):
         os.makedirs("backend/data")
 
-    # If no file OR file is empty → create a clean initial dataset
     if not os.path.exists(CSV_PATH) or os.path.getsize(CSV_PATH) == 0:
         df = generate_initial_history()
-        print("🔄 Creating new history.csv with initial row")
         df.to_csv(CSV_PATH, index=False)
 
 
 # -----------------------------
-# Load Data
+# LOAD DATA
 # -----------------------------
 def load_data():
-    """Load CSV safely with timestamp parsing."""
     if not os.path.exists(CSV_PATH):
         init_history()
 
-    try:
-        df = pd.read_csv(CSV_PATH, parse_dates=["timestamp"])
-    except Exception:
-        # Fallback: file corrupted → recreate
-        print("⚠ history.csv corrupted — recreating file")
-        init_history()
-        df = pd.read_csv(CSV_PATH, parse_dates=["timestamp"])
+    df = pd.read_csv(CSV_PATH, parse_dates=["timestamp"])
+
+    # Additional safety: replace any corrupt numbers
+    df = df.replace([float("inf"), float("-inf")], 0)
+    df = df.fillna(0)
 
     return df
 
 
 # -----------------------------
-# Append new synthetic row
+# APPEND NEW 30-MINUTE ROW
 # -----------------------------
 def append_random_row():
-    """Generate new 30-minute synthetic datapoint."""
     df = load_data()
 
-    # Generate next timestamp
     if df.empty:
-        timestamp = datetime.now().replace(second=0, microsecond=0)
+        last_ts = datetime.now().replace(second=0, microsecond=0)
     else:
-        last_ts = pd.to_datetime(df["timestamp"].iloc[-1])
-        timestamp = last_ts + timedelta(minutes=30)
+        last_ts = df["timestamp"].iloc[-1]
 
-    # Create synthetic metrics
+    next_ts = last_ts + timedelta(minutes=30)
+
     new_row = {
-        "timestamp": timestamp,
-        "sorting_capacity": random.randint(70, 120),
-        "staff_available": random.randint(8, 25),
-        "vehicles_ready": random.randint(5, 12),
-        "congestion_level": round(random.uniform(0.1, 0.9), 3),
-        "inbound_volume": random.randint(100, 250),
-        "outbound_volume": random.randint(50, 200),
-        "packages_arrived": random.randint(300, 600),
-        "packages_departed": random.randint(150, 400),
+        "timestamp": next_ts,
+        "sorting_capacity": safe_value(random.randint(60, 110)),
+        "staff_available": safe_value(random.randint(10, 25)),
+        "vehicles_ready": safe_value(random.randint(4, 12)),
+        "congestion_level": safe_value(round(random.uniform(0.2, 0.9), 2)),
+        "inbound_volume": safe_value(random.randint(150, 350)),
+        "outbound_volume": safe_value(random.randint(80, 250)),
+        "packages_arrived": safe_value(random.randint(300, 700)),
+        "packages_departed": safe_value(random.randint(150, 500)),
     }
 
-    # Append safely
     df = pd.concat([df, pd.DataFrame([new_row])], ignore_index=True)
     df.to_csv(CSV_PATH, index=False)
 
