@@ -1,45 +1,60 @@
 # Requires PowerShell 5+ or PowerShell 7+
+# === XenberSDU Automated Setup & Launch (Windows) ===
+
 Write-Host ">>> Starting XenberSDU setup..." -ForegroundColor Cyan
 
-# 1. Project root = parent of the setup folder
+# --- Project root
 $projectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Definition)
-
-# Quote the path to handle spaces
-Set-Location "$projectRoot"
 Write-Host "Project folder: $projectRoot" -ForegroundColor Green
 
-# 2. Allow scripts to run in this session
+# --- Allow scripts
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 
-# 3. Create virtual environment if missing
-if (!(Test-Path "./venv")) {
+# --- Detect Python 3.11
+$pythonPath = ""
+$pythonCheck = & python --version 2>&1
+if ($pythonCheck -match "Python 3\.11") {
+    $pythonPath = "python"
+} else {
+    Write-Host "❌ Python 3.11 not found!" -ForegroundColor Red
+    Write-Host "Install it from https://www.python.org/downloads/release/python-3117/" -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "Using Python: $pythonCheck" -ForegroundColor Green
+
+# --- Create virtual environment
+$venvPath = Join-Path $projectRoot "venv"
+if (!(Test-Path $venvPath)) {
     Write-Host "Creating virtual environment..." -ForegroundColor Yellow
-    python -m venv venv
+    & $pythonPath -m venv $venvPath
 } else {
     Write-Host "Virtual environment already exists." -ForegroundColor Green
 }
 
-# 4. Activate virtual environment
+# --- Activate venv
+$activatePath = Join-Path $venvPath "Scripts\Activate.ps1"
 Write-Host "Activating virtual environment..."
-& ".\venv\Scripts\Activate.ps1"
+& $activatePath
 
-# 5. Install dependencies
-if (Test-Path "./requirements.txt") {
+# --- Install dependencies
+$reqPath = Join-Path $projectRoot "requirements.txt"
+if (Test-Path $reqPath) {
     Write-Host "Installing dependencies..." -ForegroundColor Yellow
-    pip install -r requirements.txt
+    pip install --upgrade pip setuptools wheel
+    pip install -r $reqPath
 } else {
-    Write-Host "requirements.txt not found. Skipping." -ForegroundColor Red
+    Write-Host "requirements.txt not found. Skipping installation." -ForegroundColor Red
 }
 
-# 6. Start backend in a new PowerShell window
-Write-Host "Starting backend..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command",
-"cd `"$projectRoot`"; & `".\venv\Scripts\Activate.ps1`"; python -m uvicorn backend.api:app --reload"
+# --- Launch backend in a new window
+$backendCmd = "& `"$activatePath`"; python -m uvicorn backend.api:app --reload"
+Start-Process powershell -ArgumentList "-NoExit", "-Command $backendCmd" -WorkingDirectory $projectRoot
 
-# 7. Start frontend in a new PowerShell window
-Write-Host "Starting frontend..." -ForegroundColor Cyan
-Start-Process powershell -ArgumentList "-NoExit", "-Command",
-"cd `"$projectRoot`"; & `".\venv\Scripts\Activate.ps1`"; python -m streamlit run frontend/dashboard.py"
+# --- Launch frontend in a new window
+$frontendPath = Join-Path $projectRoot "frontend"
+$frontendCmd = "& `"$activatePath`"; python -m streamlit run dashboard.py"
+Start-Process powershell -ArgumentList "-NoExit", "-Command $frontendCmd" -WorkingDirectory $frontendPath
 
-Write-Host ">>> Setup complete! Backend and frontend are running." -ForegroundColor Green
-
+Write-Host ">>> Setup complete!" -ForegroundColor Green
+Write-Host "Backend → http://127.0.0.1:8000"
+Write-Host "Frontend → http://localhost:8501"
